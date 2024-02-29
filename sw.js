@@ -1,63 +1,96 @@
-const version = 1;
+const version = 2;
+let staticName = `staticCache$-${version}`;
+let dynamicName = 'dynamicCache';
+let fontName = 'fontCache';
+let imageName = 'imageCache';
+
+let assets = ['/', '/index.html', '/css/main.css', '/js/app.js'];
 
 self.addEventListener('install', (ev) => {
-  //service worker has been installed.
-  //Extendable Event
-
-  ev.waitUntil(
-    Promise.resolve()
-      .then(() => {
-        manuel();
-      })
-      .then(() => {
-        //the promise returned from teja will wait until it resolves
-        //before going to the next then()
-        return teja();
-      })
-      .then(() => {
-        console.log('installed');
-        //when this then() returns undefiined
-        //it goes to the ev.waitUntil
-        //which will change our state from installing to installed.
-      })
-  );
-  // self.skipWaiting(); //skip waiting to activate
-  //but... the page will not use the new sw yet
+  const preCache = async () => {
+    const cache = await caches.open(staticName);
+    return cache.addAll(assets).then(() => {
+      console.log(`Version ${version} installed`);
+    });
+  };
+  ev.waitUntil(preCache());
 });
 
-function teja() {
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      console.log('teja');
-      resolve();
-    }, 2000);
-  });
-}
-
-function manuel() {
-  console.log('manuel');
-}
-
 self.addEventListener('activate', (ev) => {
-  // when the service worker has been activated to replace an old one.
-  //Extendable Event
-  console.log('activated - this worker not used until page reloads');
-  // clients.claim().then(() => {
-  //   //claim means that the html file will use this new service worker.
-  //   console.log(
-  //     'the service worker has now claimed all pages so they use the new service worker.'
-  //   );
-  // });
+  ev.waitUntil(
+    caches.keys().then((keyList) => {
+      return Promise.all(
+        keyList
+          .filter((key) => key !== staticName)
+          .map((key) => caches.delete(key))
+      );
+    })
+  );
 });
 
 self.addEventListener('fetch', (ev) => {
   // ev.request each time the webpage asks for any resource.
   //Extendable Event
-  console.log('fetch request for', ev.request.url, 'from', ev.clientId);
-  //check the cache then do a fetch if missing
+  console.log(`fetch request for: ${ev.request.url}`);
+  /*                  */
+  // version 1 - pass thru
+  // ev.respondWith(fetch(ev.request));
+  /*                  */
+  // version 2 - check the caches first for the file. If missing do a fetch
+  // ev.respondWith(
+  //   caches.match(ev.request).then((cacheRes) => {
+  //     if (cacheRes == undefined) {
+  //       console.log(`MISSING ${ev.request.url}`);
+  //     }
+  //     return cacheRes || fetch(ev.request);
+  //   })
+  // );
+  /*                  */
+  //version 3 - check cache. fetch if missing. then add response to cache
+  ev.respondWith(
+    caches.match(ev.request).then((cacheRes) => {
+      return (
+        cacheRes ||
+        fetch(ev.request).then((fetchResponse) => {
+          let type = fetchResponse.headers.get('content-type');
+          if (
+            (type && type.match(/^text\/css/i)) ||
+            ev.request.url.match(/fonts.googleapis.com/i)
+          ) {
+            //css to save in dynamic cache
+            console.log(`save a CSS file ${ev.request.url}`);
+            return caches.open(dynamicName).then((cache) => {
+              cache.put(ev.request, fetchResponse.clone());
+              return fetchResponse;
+            });
+          } else if (
+            (type && type.match(/^font\//i)) ||
+            ev.request.url.match(/fonts.gstatic.com/i)
+          ) {
+            console.log(`save a FONT file ${ev.request.url}`);
+            return caches.open(fontName).then((cache) => {
+              cache.put(ev.request, fetchResponse.clone());
+              return fetchResponse;
+            });
+          } else if (type && type.match(/^image\//i)) {
+            //save in image cache
+            console.log(`save an IMAGE file ${ev.request.url}`);
+            return caches.open(imageName).then((cache) => {
+              cache.put(ev.request, fetchResponse.clone());
+              return fetchResponse;
+            });
+          } else {
+            //save in dynamic cache
+            console.log(`OTHER save ${ev.request.url}`);
+            return caches.open(dynamicName).then((cache) => {
+              cache.put(ev.request, fetchResponse.clone());
+              return fetchResponse;
+            });
+          }
+        })
+      );
+    })
+  );
 });
 
-self.addEventListener('message', (ev) => {
-  //message from web page ev.data.
-  //Extendable Event
-});
+self.addEventListener('message', (ev) => {});
