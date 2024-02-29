@@ -3,7 +3,7 @@ const version = 1;
 self.addEventListener('install', (ev) => {
   //service worker has been installed.
   //Extendable Event
-  console.log('i am installingfdsfds');
+
   ev.waitUntil(
     Promise.resolve()
       .then(() => {
