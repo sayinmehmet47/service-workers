@@ -1,96 +1,153 @@
-const version = 2;
-let staticName = `staticCache$-${version}`;
-let dynamicName = 'dynamicCache';
-let fontName = 'fontCache';
-let imageName = 'imageCache';
-
-let assets = ['/', '/index.html', '/css/main.css', '/js/app.js'];
+const version = 8;
+let staticName = `staticCache-${version}`;
+let dynamicName = `dynamicCache`;
+let imageName = `imageCache-${version}`;
+let options = {
+  ignoreSearch: false,
+  ignoreMethod: false,
+  ignoreVary: false,
+};
+//starter html and css and js files
+let assets = ['/', '/index.html', '/css/main.css', '/js/app.js', '/404.html'];
+//starter images
+let imageAssets = ['/img/araba.jpg', '/img/hero.jpg'];
 
 self.addEventListener('install', (ev) => {
-  const preCache = async () => {
-    const cache = await caches.open(staticName);
-    return cache.addAll(assets).then(() => {
-      console.log(`Version ${version} installed`);
-    });
-  };
-  ev.waitUntil(preCache());
+  // service worker has been installed.
+  //Extendable Event
+  console.log(`Version ${version} installed`);
+  // build a cache
+  ev.waitUntil(
+    caches
+      .open(staticName)
+      .then((cache) => {
+        cache.addAll(assets).then(
+          () => {
+            //addAll == fetch() + put()
+            console.log(`${staticName} has been updated.`);
+          },
+          (err) => {
+            console.warn(`failed to update ${staticName}.`);
+          }
+        );
+      })
+      .then(() => {
+        caches.open(imageName).then((cache) => {
+          cache.addAll(imageAssets).then(
+            () => {
+              console.log(`${imageName} has been updated.`);
+            },
+            (err) => {
+              console.warn(`failed to update ${staticName}.`);
+            }
+          );
+        });
+      })
+  );
 });
 
 self.addEventListener('activate', (ev) => {
+  // when the service worker has been activated to replace an old one.
+  //Extendable Event
+  console.log('activated');
+  // delete old versions of caches.
   ev.waitUntil(
-    caches.keys().then((keyList) => {
+    caches.keys().then((keys) => {
       return Promise.all(
-        keyList
-          .filter((key) => key !== staticName)
+        keys
+          .filter((key) => {
+            if (key != staticName && key != imageName) {
+              return true;
+            }
+          })
           .map((key) => caches.delete(key))
-      );
+      ).then((empties) => {
+        //empties is an Array of boolean values.
+        //one for each cache deleted
+      });
     })
   );
 });
 
 self.addEventListener('fetch', (ev) => {
-  // ev.request each time the webpage asks for any resource.
-  //Extendable Event
-  console.log(`fetch request for: ${ev.request.url}`);
-  /*                  */
-  // version 1 - pass thru
-  // ev.respondWith(fetch(ev.request));
-  /*                  */
-  // version 2 - check the caches first for the file. If missing do a fetch
-  // ev.respondWith(
-  //   caches.match(ev.request).then((cacheRes) => {
-  //     if (cacheRes == undefined) {
-  //       console.log(`MISSING ${ev.request.url}`);
-  //     }
-  //     return cacheRes || fetch(ev.request);
-  //   })
-  // );
-  /*                  */
-  //version 3 - check cache. fetch if missing. then add response to cache
+  // Extendable Event.
+  console.log(`MODE: ${ev.request.mode} for ${ev.request.url}`);
+
   ev.respondWith(
     caches.match(ev.request).then((cacheRes) => {
       return (
         cacheRes ||
-        fetch(ev.request).then((fetchResponse) => {
-          let type = fetchResponse.headers.get('content-type');
-          if (
-            (type && type.match(/^text\/css/i)) ||
-            ev.request.url.match(/fonts.googleapis.com/i)
-          ) {
-            //css to save in dynamic cache
-            console.log(`save a CSS file ${ev.request.url}`);
-            return caches.open(dynamicName).then((cache) => {
-              cache.put(ev.request, fetchResponse.clone());
-              return fetchResponse;
-            });
-          } else if (
-            (type && type.match(/^font\//i)) ||
-            ev.request.url.match(/fonts.gstatic.com/i)
-          ) {
-            console.log(`save a FONT file ${ev.request.url}`);
-            return caches.open(fontName).then((cache) => {
-              cache.put(ev.request, fetchResponse.clone());
-              return fetchResponse;
-            });
-          } else if (type && type.match(/^image\//i)) {
-            //save in image cache
-            console.log(`save an IMAGE file ${ev.request.url}`);
-            return caches.open(imageName).then((cache) => {
-              cache.put(ev.request, fetchResponse.clone());
-              return fetchResponse;
-            });
-          } else {
-            //save in dynamic cache
-            console.log(`OTHER save ${ev.request.url}`);
-            return caches.open(dynamicName).then((cache) => {
-              cache.put(ev.request, fetchResponse.clone());
-              return fetchResponse;
-            });
+        Promise.resolve().then(() => {
+          let opts = {
+            mode: ev.request.mode, //cors, no-cors, same-origin, navigate
+            cache: 'no-cache',
+          };
+          if (!ev.request.url.startsWith(location.origin)) {
+            //not on the same domain as my html file
+            opts.mode = 'cors';
+            opts.credentials = 'omit';
           }
+          return fetch(ev.request.url, opts).then(
+            (fetchResponse) => {
+              //we got a response from the server.
+              if (fetchResponse.ok) {
+                return handleFetchResponse(fetchResponse, ev.request);
+              }
+              //not ok 404 error
+              if (fetchResponse.status == 404) {
+                if (ev.request.url.match(/\.html/i)) {
+                  return caches.open(staticName).then((cache) => {
+                    return cache.match('/404.html');
+                  });
+                }
+                if (
+                  ev.request.url.match(/\.jpg$/i) ||
+                  ev.request.url.match(/\.png$/i)
+                ) {
+                  return caches.open(imageName).then((cache) => {
+                    return cache.match('/img/araba.jpg');
+                  });
+                }
+              }
+            },
+            (err) => {
+              //this is the network failure
+              //return the 404.html file if it is a request for an html file
+              if (ev.request.url.match(/\.html/i)) {
+                return caches.open(staticName).then((cache) => {
+                  return cache.match('/404.html');
+                });
+              }
+            }
+          );
+          //.catch()
         })
       );
-    })
-  );
-});
+    }) //end of match().then()
+  ); //end of respondWith
+}); //end of fetch listener
 
-self.addEventListener('message', (ev) => {});
+const handleFetchResponse = (fetchResponse, request) => {
+  let type = fetchResponse.headers.get('content-type');
+  // console.log('handle request for', type, request.url);
+  if (type && type.match(/^image\//i)) {
+    //save the image in image cache
+    console.log(`SAVE ${request.url} in image cache`);
+    return caches.open(imageName).then((cache) => {
+      cache.put(request, fetchResponse.clone());
+      return fetchResponse;
+    });
+  } else {
+    //save in dynamic cache - html, css, fonts, js, etc
+    console.log(`SAVE ${request.url} in dynamic cache`);
+    return caches.open(dynamicName).then((cache) => {
+      cache.put(request, fetchResponse.clone());
+      return fetchResponse;
+    });
+  }
+};
+
+self.addEventListener('message', (ev) => {
+  //message from web page ev.data.
+  //Extendable Event
+});
