@@ -1,4 +1,4 @@
-const version = 8;
+const version = 1;
 let staticName = `staticCache-${version}`;
 let dynamicName = `dynamicCache`;
 let imageName = `imageCache-${version}`;
@@ -148,6 +148,41 @@ const handleFetchResponse = (fetchResponse, request) => {
 };
 
 self.addEventListener('message', (ev) => {
-  //message from web page ev.data.
-  //Extendable Event
+  let data = ev.data;
+  let clientId = ev.source.id;
+  console.log('Service worker received message', data, clientId);
+  if ('addPerson' in data) {
+    let msg = 'Thanks. Pretend I did something with the data.';
+    sendMessage(
+      {
+        code: 0,
+        message: msg,
+      },
+      clientId
+    );
+  }
+  if ('otherAction' in data) {
+    let msg = 'Hola';
+    sendMessage({
+      code: 0,
+      message: msg,
+    });
+  }
 });
+
+const sendMessage = async (msg, clientId) => {
+  let allClients = [];
+  if (clientId) {
+    let client = await clients.get(clientId);
+    allClients.push(client);
+  } else {
+    allClients = await clients.matchAll({ includeUncontrolled: true });
+  }
+
+  return Promise.all(
+    allClients.map((client) => {
+      console.log('postMessage', msg, 'to', client.id);
+      return client.postMessage(msg);
+    })
+  );
+};

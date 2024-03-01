@@ -5,7 +5,10 @@ const APP = {
     //register the service worker
     APP.registerSW();
     //add click listener for h2 to load a new image
-    document.querySelector('h2').addEventListener('click', APP.addImage);
+
+    document
+      .getElementById('colorForm')
+      .addEventListener('click', APP.saveColor);
   },
   registerSW() {
     if ('serviceWorker' in navigator) {
@@ -25,14 +28,30 @@ const APP = {
       console.log('Service workers are not supported.');
     }
   },
-  addImage(ev) {
-    let img = document.createElement('img');
-    img.src = '/img/hero.png';
-    img.alt = 'dynamically added image';
-    let p = document.createElement('p');
-    p.append(img);
-    document.querySelector('main').append(p);
+  saveColor(ev) {
+    ev.preventDefault();
+    let name = document.getElementById('name');
+    let color = document.getElementById('color');
+
+    let strName = name.value.trim();
+    let strColor = color.value.trim();
+    if (strName && strColor) {
+      let person = {
+        id: Date.now(),
+        name: strName,
+        color: strColor,
+      };
+      console.log('Save', person);
+      APP.sendMessage({ addPerson: person, otherAction: 'hello' });
+    }
   },
+
+  sendMessage(msg) {
+    if (navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage(msg);
+    }
+  },
+  onMessage({ data }) {},
 };
 
 document.addEventListener('DOMContentLoaded', APP.init);
